@@ -1,5 +1,6 @@
 {
   "downloadDir": "./tmp",
   "proxy": null,
-  "links": "./task.txt"
+  "links": "./task.txt",
+  "linksOnly": false
 }

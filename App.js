@@ -3,6 +3,7 @@ const rp = require('request-promise'),
   config = require('./config.json'),
   fs = require('fs'),
   readline = require('readline'),
+  async = require('async'),
   // adm_zip = require("adm-zip"),
   // zip = new adm_zip(),
   path = require('path');
@@ -49,6 +50,10 @@ async function task(url) {
     console.error(`NO IMAGE!!! URL: ${url}`);
     return;
   }
+  if (config.linksOnly) {
+    imgSrc.forEach(e => console.log(e));
+    return;
+  }
   // mkdir
   let dlDir = config.downloadDir + path.sep + await $('header h1').text();
   dlDir = path.resolve(dlDir);
@@ -57,7 +62,6 @@ async function task(url) {
     console.log(`Created dir ${dlDir}`);
   }
   for (let i = 0; i < imgSrc.length; i++) {
-    let start = new Date();
     let src = imgSrc[i];
     console.log(`Downloading ${src}`);
     let savePath = dlDir + path.sep + (i + 1) + path.extname(new URL(src).pathname);
@@ -65,10 +69,8 @@ async function task(url) {
       url: src,
       resolveWithFullResponse: true,
       // headers
-    }).pipe(fs.createWriteStream(`${savePath}`))
-    let cost = new Date() - start;
-    let logInfo = cost > 1000 ? cost / 1000 + 's' : cost + 'ms';
-    console.log(`${logInfo} Save to ${savePath}`);
+    }).pipe(fs.createWriteStream(`${savePath}`));
+    console.log(`Save to ${savePath}`);
   }
 }
 
