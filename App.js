@@ -1,12 +1,15 @@
-const rp = require('request-promise'),
+const fetch = require('node-fetch'),
   cheerio = require('cheerio'),
   config = require('./config.json'),
+  util = require('util'),
   fs = require('fs'),
+  streamPipeline = util.promisify(require('stream').pipeline),
   readline = require('readline'),
   async = require('async'),
   // adm_zip = require("adm-zip"),
   // zip = new adm_zip(),
-  path = require('path');
+  path = require('path'),
+  HttpsProxyAgent = require('https-proxy-agent');
 
 function init() {
   try {
@@ -20,87 +23,134 @@ function init() {
     }
     fs.accessSync(config.links, fs.constants.R_OK);
   } catch (err) {
-    console.error('无权访问');
+    console.error('Unable to read file!');
     process.exit(1)
   }
   
 }
 
-async function getDom(url) {
-  let options = {
-    method: 'GET',
-    uri: url,
-    proxy: config.proxy
-    // encoding: 'utf-8'
-  };
-  let data = await rp(options);
-  return await cheerio.load(data)
+/**
+ * Calc how much time spent on run function.
+ * @param func Run function
+ * @param args function's args
+ */
+async function spendTime(func, ...args) {
+  return await new Promise(async (resolve, reject) => {
+    let start = new Date();
+    try {
+      await func(args);
+      return resolve();
+    } catch (e) {
+      console.error(e);
+      return reject();
+    } finally {
+      let cost = new Date() - start;
+      let logInfo = cost > 1000 ? cost / 1000 + 's' : cost + 'ms';
+      console.info(`Total spent ${logInfo}.`);
+    }
+  });
 }
 
-async function task(url) {
-  if (url === null || url === undefined || url === "") {
-    return;
-  }
-  let imgSrc = [];
-  let $ = await getDom(url);
-  await $("img").each((index, item) => {
-    imgSrc.push(new URL(url).origin + item.attribs.src);
+/**
+ * Checks if value is null or undefined or ''.
+ * @param object object
+ * @return {boolean} true for nil or ''
+ */
+function isNil(object) {
+  return (object == null) || (object === '');
+}
+
+async function getDom(url) {
+  let data = await (isNil(config.proxy) ? fetch(url) : fetch(url, {agent: new HttpsProxyAgent(config.proxy)}));
+  let text = await data.text();
+  return await cheerio.load(text);
+}
+
+async function mkdir(dir) {
+  return await new Promise(async (resolve, reject) => {
+    if (!fs.existsSync(dir)) {
+      try {
+        await fs.mkdirSync(dir);
+        console.log(`Created dir ${dir} successful!`);
+        return resolve();
+      } catch (e) {
+        console.error(`Create dir ${dir} failed!`);
+        return reject(e);
+      }
+    } else {
+      console.log(`Dir already exist: ${dir}`);
+      return resolve();
+    }
   })
-  if (imgSrc.length === 0) {
-    console.error(`NO IMAGE!!! URL: ${url}`);
-    return;
-  }
-  if (config.linksOnly) {
-    imgSrc.forEach(e => console.log(e));
-    return;
-  }
-  // mkdir
-  let dlDir = config.downloadDir + path.sep + await $('header h1').text();
-  dlDir = path.resolve(dlDir);
-  if (!fs.existsSync(dlDir)) {
-    fs.mkdirSync(dlDir);
-    console.log(`Created dir ${dlDir}`);
-  }
-  for (let i = 0; i < imgSrc.length; i++) {
-    let src = imgSrc[i];
-    console.log(`Downloading ${src}`);
-    let savePath = dlDir + path.sep + (i + 1) + path.extname(new URL(src).pathname);
-    await rp({
-      url: src,
-      resolveWithFullResponse: true,
-      // headers
-    }).pipe(fs.createWriteStream(`${savePath}`));
-    console.log(`Save to ${savePath}`);
-  }
+}
+
+async function downloadImg(imgSrc, callback) {
+  console.log(`Downloading ${imgSrc.url}...`);
+  await spendTime(async () => {
+    let res = await fetch(imgSrc.url);
+    if (res.ok) {
+      await streamPipeline(res.body, fs.createWriteStream(imgSrc.savePath));
+    }
+  }, null)
+    .then(() => {
+      console.log(`Save to ${imgSrc.savePath}`);
+    })
+    .catch(e => {
+      console.error(`Download error!!!`);
+      console.error(e);
+    });
+  callback();
 }
 
 async function main() {
-  let start = new Date();
-  init();
+  await init();
   // read by line
   let rl = readline.createInterface({
     input: fs.createReadStream(config.links),
     crlfDelay: Infinity
   });
+  /* [{"name":"","url":"","saveDir":"","imgSrc":[{"url":"","savePath":""}]},...]
+  links is updated but only use for length, maybe it's not necessary.
+   */
   let links = [];
   for await (const line of rl) {
-    links.push(line)
+    if (isNil(line)) {
+      continue;
+    }
+    let tmp = {
+      "name": "",
+      "url": "",
+      "saveDir": "",
+      "imgSrc": []
+    };
+    tmp.url = line;
+    links.push(tmp);
   }
   console.log(`Links Total: ${links.length}`);
+  let imgSrcArray = [];
   for (let i = 0; i < links.length; i++) {
-    console.log(`Run task ${i}...`);
-    let start1 = new Date();
-    await task(links[i]);
-    let cost = new Date() - start1;
-    let logInfo = cost > 1000 ? cost / 1000 + 's' : cost + 'ms';
-    console.log(`Task ${i} finished, spent ${logInfo}.`);
+    let link = links[i];
+    let $ = await getDom(link.url);
+    link.name = await $('header h1').text();
+    link.saveDir = path.resolve(config.downloadDir + path.sep + link.name);
+    await mkdir(link.saveDir);
+    await $("img").each((index, item) => {
+      let tmp = {
+        url: new URL(link.url).origin + item.attribs.src,
+        savePath: path.resolve(link.saveDir + path.sep + (index + 1) + path.extname(item.attribs.src))
+      }
+      link.imgSrc.push(tmp);
+      imgSrcArray.push(tmp);
+    });
   }
-  let cost = new Date() - start;
-  let logInfo = cost > 1000 ? cost / 1000 + 's' : cost + 'ms';
-  console.log(`Total spent ${logInfo}.`);
+  await spendTime(async () => {
+    await async.mapLimit(imgSrcArray, config.limit, function (json, callback) {
+      downloadImg(json, callback);
+    })
+  }, null);
 }
 
-main().then(() => {
+spendTime(main, null).then(() => {
   console.log(`Download complete!`);
 })
   .then(async () => {

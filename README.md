@@ -11,5 +11,5 @@
 4. `npm start`
 
 # Know issues
-* Image maybe broken under high concurrency
+1. ~~Image maybe broken under high concurrency~~ (fixed)
 > Some ways: async.queue async.mapLimit   
