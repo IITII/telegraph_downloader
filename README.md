@@ -1,7 +1,7 @@
 # Telegraph_downloader
-> nodejs  
+> node-fetch  
 > cheerio  
-> request-promise 
+> nodejs   
 * A simple downloader for Telegraph
 
 # Use
@@ -13,3 +13,13 @@
 # Know issues
 1. ~~Image maybe broken under high concurrency~~ (fixed)
 > Some ways: async.queue async.mapLimit   
+
+# config.json
+
+| key | Description | default |
+| :-: |:-: | :-:| 
+| downloadDir | Images download dir| `./tmp`| 
+| limit | Concurrency Limit| `10`| 
+| proxy | Http proxy| `null`| 
+| links | A file which store download Links| `task.txt`| 
+| linksOnly | while true, print all image's links and exit without download anything| `false`| 

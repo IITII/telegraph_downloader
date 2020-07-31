@@ -1,7 +1,7 @@
 {
   "downloadDir": "./tmp",
   "limit": 10,
-  "proxy": "http://localhost:10809",
+  "proxy": null,
   "links": "./task.txt",
   "linksOnly": false
 }
