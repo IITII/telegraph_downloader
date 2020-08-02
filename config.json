@@ -3,5 +3,5 @@
   "limit": 10,
   "proxy": null,
   "links": "./task.txt",
-  "linksOnly": false
+  "zipFileName": null
 }

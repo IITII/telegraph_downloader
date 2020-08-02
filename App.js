@@ -1,3 +1,4 @@
+'use strict';
 const fetch = require('node-fetch'),
   cheerio = require('cheerio'),
   config = require('./config.json'),
@@ -6,15 +7,19 @@ const fetch = require('node-fetch'),
   streamPipeline = util.promisify(require('stream').pipeline),
   readline = require('readline'),
   async = require('async'),
-  // adm_zip = require("adm-zip"),
-  // zip = new adm_zip(),
+  _ = require('lodash'),
   path = require('path'),
-  HttpsProxyAgent = require('https-proxy-agent');
+  HttpsProxyAgent = require('https-proxy-agent'),
+  proxy = config.proxy || process.env.HTTP_PROXY;
 
 function init() {
   try {
     if (!fs.existsSync(config.links)) {
       console.error(`File NOT FOUND:${path.resolve(config.links)}`);
+      process.exit(1);
+    }
+    if (!(isNil(config.zipFileName) || !config.zipFileName.match('\\S+\\.zip$'))) {
+      console.error(`zipFileName must by end with ".zip" or Just keep it as "null"`);
       process.exit(1);
     }
     if (!fs.existsSync(config.downloadDir)) {
@@ -38,7 +43,7 @@ async function spendTime(func, ...args) {
   return await new Promise(async (resolve, reject) => {
     let start = new Date();
     try {
-      await func(args);
+      await func.apply(this, args);
       return resolve();
     } catch (e) {
       console.error(e);
@@ -61,7 +66,7 @@ function isNil(object) {
 }
 
 async function getDom(url) {
-  let data = await (isNil(config.proxy) ? fetch(url) : fetch(url, {agent: new HttpsProxyAgent(config.proxy)}));
+  let data = await (isNil(proxy) ? fetch(url) : fetch(url, {agent: new HttpsProxyAgent(proxy)}));
   let text = await data.text();
   return await cheerio.load(text);
 }
@@ -87,11 +92,11 @@ async function mkdir(dir) {
 async function downloadImg(imgSrc, callback) {
   console.log(`Downloading ${imgSrc.url}...`);
   await spendTime(async () => {
-    let res = await fetch(imgSrc.url);
+    let res = await (isNil(proxy) ? fetch(imgSrc.url) : fetch(imgSrc.url, {agent: new HttpsProxyAgent(proxy)}));
     if (res.ok) {
       await streamPipeline(res.body, fs.createWriteStream(imgSrc.savePath));
     }
-  }, null)
+  })
     .then(() => {
       console.log(`Save to ${imgSrc.savePath}`);
     })
@@ -117,6 +122,7 @@ async function main() {
     if (isNil(line)) {
       continue;
     }
+    // if (line.matchAll('^http://'))
     let tmp = {
       "name": "",
       "url": "",
@@ -126,6 +132,8 @@ async function main() {
     tmp.url = line;
     links.push(tmp);
   }
+  // Remove duplicate links
+  links = _.uniq(links);
   console.log(`Links Total: ${links.length}`);
   let imgSrcArray = [];
   for (let i = 0; i < links.length; i++) {
@@ -135,23 +143,60 @@ async function main() {
     link.saveDir = path.resolve(config.downloadDir + path.sep + link.name);
     await mkdir(link.saveDir);
     await $("img").each((index, item) => {
-      let tmp = {
+      link.imgSrc.push({
         url: new URL(link.url).origin + item.attribs.src,
         savePath: path.resolve(link.saveDir + path.sep + (index + 1) + path.extname(item.attribs.src))
-      }
-      link.imgSrc.push(tmp);
-      imgSrcArray.push(tmp);
+      });
     });
+    // Remove duplicate
+    link.imgSrc = _.uniqBy(link.imgSrc, 'url');
+    // Add to imgSrcArray
+    imgSrcArray = imgSrcArray.concat(link.imgSrc);
   }
   await spendTime(async () => {
-    await async.mapLimit(imgSrcArray, config.limit, function (json, callback) {
+    await async.mapLimit(imgSrcArray, config.limit || 10, function (json, callback) {
       downloadImg(json, callback);
     })
-  }, null);
+  });
+  console.log(`Download complete!`);
 }
 
-spendTime(main, null).then(() => {
-  console.log(`Download complete!`);
+/**
+ * only compress dir under given `dirname`
+ * @param dirName compress dirname
+ * @param zipFileName compressed filename
+ * @see https://github.com/cthackers/adm-zip
+ * @description docs is out-of-date
+ */
+async function zipDir(dirName, zipFileName) {
+  return await new Promise(async (resolve, reject) => {
+    try {
+      const adm_zip = require("adm-zip"),
+        zip = new adm_zip(),
+        fs = require('fs'),
+        path = require('path');
+      
+      let files = fs.readdirSync(dirName);
+      for (const file of files) {
+        let filePath = dirName + path.sep + file;
+        if (fs.lstatSync(filePath).isDirectory()) {
+          await zip.addLocalFolder(filePath, path.relative(dirName, filePath));
+        }
+      }
+      await zip.writeZip(zipFileName);
+      return resolve();
+    } catch (e) {
+      return reject(e);
+    }
+  })
+}
+
+spendTime(main).then(async () => {
+  await spendTime(async () => {
+    console.log(`Compressing...`);
+    await zipDir(config.downloadDir, config.zipFileName || path.resolve(config.downloadDir) + '.zip');
+    console.log(`Compressed to ${path.resolve(config.downloadDir)}.zip`)
+  })
 })
   .then(async () => {
     // let files = fs.readdirSync(config.downloadDir);

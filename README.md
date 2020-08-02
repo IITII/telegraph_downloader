@@ -20,6 +20,8 @@
 | :-: |:-: | :-:| 
 | downloadDir | Images download dir| `./tmp`| 
 | limit | Concurrency Limit| `10`| 
-| proxy | Http proxy| `null`| 
+| proxy | Http proxy| `Following System proxy`| 
 | links | A file which store download Links| `task.txt`| 
-| linksOnly | while true, print all image's links and exit without download anything| `false`| 
+| zipFileName | Zipped filename|`${path.resolve(downloadDir)}.zip`
+
+<!--| linksOnly | while true, print all image's links and exit without download anything| `false`|--> 
