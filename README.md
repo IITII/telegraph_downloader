@@ -12,7 +12,9 @@
 
 # Know issues
 1. ~~Image maybe broken under high concurrency~~ (fixed)
-> Some ways: async.queue async.mapLimit   
+> Some ways: async.queue async.mapLimit  
+
+2. Maybe not support Chinese   
 
 # config.json
 
@@ -22,6 +24,7 @@
 | limit | Concurrency Limit| `10`| 
 | proxy | Http proxy| `Following System proxy`| 
 | links | A file which store download Links| `task.txt`| 
-| zipFileName | Zipped filename|`${path.resolve(downloadDir)}.zip`
+| zipFileName | Zipped filename|`${path.resolve(downloadDir)}.zip`|
+| zipBin| `zip` command executable binary file|Read from `PATH`|
 
 <!--| linksOnly | while true, print all image's links and exit without download anything| `false`|--> 

@@ -167,6 +167,7 @@ async function main() {
  * @param zipFileName compressed filename
  * @see https://github.com/cthackers/adm-zip
  * @description docs is out-of-date
+ * @deprecated Unsupported chinese folder name
  */
 async function zipDir(dirName, zipFileName) {
   return await new Promise(async (resolve, reject) => {
@@ -191,22 +192,43 @@ async function zipDir(dirName, zipFileName) {
   })
 }
 
+/**
+ * compress dir via `zip` command
+ * @param dirName compress dirname
+ * @param zipFileName compressed filename
+ * @see linux command -> `zip`
+ */
+async function zipViaPipe(dirName, zipFileName) {
+  return await new Promise((resolve, reject) => {
+    const {spawn} = require('child_process'),
+      which = require('which');
+    let args = ["-q -r", zipFileName, dirName];
+    const spawnObj = spawn(
+      config.zipBin || which.sync('zip'),
+      args,
+      {
+        "shell": true,
+        "windowsHide": true
+      }
+    );
+    spawnObj.stderr.on('data', function (e) {
+      return reject(e);
+    });
+    spawnObj.on('exit', (code) => {
+      if (code === 0) {
+        return resolve();
+      } else {
+        return reject('UnKnowError!!!');
+      }
+    });
+  });
+}
+
 spendTime(main).then(async () => {
   await spendTime(async () => {
     console.log(`Compressing...`);
-    await zipDir(config.downloadDir, config.zipFileName || path.resolve(config.downloadDir) + '.zip');
+    // await zipDir(config.downloadDir, config.zipFileName || path.resolve(config.downloadDir) + '.zip');
+    await zipViaPipe(config.downloadDir, config.zipFileName || path.resolve(config.downloadDir) + '.zip');
     console.log(`Compressed to ${path.resolve(config.downloadDir)}.zip`)
   })
-})
-  .then(async () => {
-    // let files = fs.readdirSync(config.downloadDir);
-    // files.forEach(file => {
-    //   let filePath = config.downloadDir + path.sep + file;
-    //   if (fs.lstatSync(filePath).isDirectory()) {
-    //     zip.addLocalFolder(filePath);
-    //   }
-    // })
-    // await zip.addLocalFolder(config.downloadDir)
-    // await zip.writeZip(`${config.downloadDir + path.sep + path.basename(config.downloadDir)}.zip`);
-    // console.log('Compress Finish!')
-  })
+});

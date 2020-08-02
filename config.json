@@ -3,5 +3,6 @@
   "limit": 10,
   "proxy": null,
   "links": "./task.txt",
-  "zipFileName": null
+  "zipFileName": null,
+  "zipBin": null
 }
