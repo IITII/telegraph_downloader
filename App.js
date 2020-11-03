@@ -1,37 +1,54 @@
+/**
+ * @author IITII
+ * @date 2020/11/3 22:34
+ */
 'use strict';
-const fetch = require('node-fetch'),
-  cheerio = require('cheerio'),
-  config = require('./config.json'),
-  util = require('util'),
+const axios = require('axios'),
+  {load} = require('cheerio'),
+  config = require('./config.js'),
   fs = require('fs'),
-  streamPipeline = util.promisify(require('stream').pipeline),
   readline = require('readline'),
   async = require('async'),
-  _ = require('lodash'),
-  path = require('path'),
-  HttpsProxyAgent = require('https-proxy-agent'),
-  proxy = config.proxy || process.env.HTTP_PROXY;
+  {uniq} = require('lodash'),
+  {logger} = require('./logger'),
+  path = require('path');
 
 function init() {
   try {
     if (!fs.existsSync(config.links)) {
-      console.error(`File NOT FOUND:${path.resolve(config.links)}`);
-      process.exit(1);
-    }
-    if (!(isNil(config.zipFileName) || !config.zipFileName.match('\\S+\\.zip$'))) {
-      console.error(`zipFileName must by end with ".zip" or Just keep it as "null"`);
+      logger.error(`File NOT FOUND:${path.resolve(config.links)}`);
       process.exit(1);
     }
     if (!fs.existsSync(config.downloadDir)) {
       fs.mkdirSync(config.downloadDir);
-      console.log(`Created ${path.resolve(config.downloadDir)}`);
+      logger.info(`Created ${path.resolve(config.downloadDir)}`);
     }
     fs.accessSync(config.links, fs.constants.R_OK);
+
+    //Init axios
+    axios.defaults.timeout = 3000;
+    axios.defaults.proxy = config.proxy;
+    axios.defaults.headers['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36";
+
   } catch (err) {
-    console.error('Unable to read file!');
+    logger.error(`Unable to read file: ${config.links}!`);
     process.exit(1)
   }
-  
+}
+
+/**
+ * Checks if value is null or undefined or ''.
+ * @param object object
+ * @return {boolean} true for nil or ''
+ */
+function isNil(object) {
+  return (object == null) || (object === '');
+}
+
+function mkdir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath)
+  }
 }
 
 /**
@@ -46,189 +63,128 @@ async function spendTime(func, ...args) {
       await func.apply(this, args);
       return resolve();
     } catch (e) {
-      console.error(e);
+      logger.error(e);
       return reject();
     } finally {
       let cost = new Date() - start;
       let logInfo = cost > 1000 ? cost / 1000 + 's' : cost + 'ms';
-      console.info(`Total spent ${logInfo}.`);
+      logger.info(`Total spent ${logInfo}.`);
     }
   });
 }
 
-/**
- * Checks if value is null or undefined or ''.
- * @param object object
- * @return {boolean} true for nil or ''
- */
-function isNil(object) {
-  return (object == null) || (object === '');
-}
-
-async function getDom(url) {
-  let data = await (isNil(proxy) ? fetch(url) : fetch(url, {agent: new HttpsProxyAgent(proxy)}));
-  let text = await data.text();
-  return await cheerio.load(text);
-}
-
-async function mkdir(dir) {
-  return await new Promise(async (resolve, reject) => {
-    if (!fs.existsSync(dir)) {
-      try {
-        await fs.mkdirSync(dir);
-        console.log(`Created dir ${dir} successful!`);
-        return resolve();
-      } catch (e) {
-        console.error(`Create dir ${dir} failed!`);
-        return reject(e);
-      }
-    } else {
-      console.log(`Dir already exist: ${dir}`);
-      return resolve();
-    }
-  })
-}
-
-async function downloadImg(imgSrc, callback) {
-  console.log(`Downloading ${imgSrc.url}...`);
-  await spendTime(async () => {
-    let res = await (isNil(proxy) ? fetch(imgSrc.url) : fetch(imgSrc.url, {agent: new HttpsProxyAgent(proxy)}));
-    if (res.ok) {
-      await streamPipeline(res.body, fs.createWriteStream(imgSrc.savePath));
-    }
-  })
-    .then(() => {
-      console.log(`Save to ${imgSrc.savePath}`);
-    })
-    .catch(e => {
-      console.error(`Download error!!!`);
-      console.error(e);
-    });
-  callback();
-}
-
-async function main() {
-  await init();
-  // read by line
+async function getUrl(filePath) {
   let rl = readline.createInterface({
-    input: fs.createReadStream(config.links),
+    input: fs.createReadStream(filePath),
     crlfDelay: Infinity
   });
-  /* [{"name":"","url":"","saveDir":"","imgSrc":[{"url":"","savePath":""}]},...]
-  links is updated but only use for length, maybe it's not necessary.
-   */
-  let links = [];
-  for await (const line of rl) {
+  const links = [];
+  for await (let line of rl) {
+    line = line.trim().replace("\n", "");
     if (isNil(line)) {
       continue;
     }
-    // if (line.matchAll('^http://'))
-    let tmp = {
-      "name": "",
-      "url": "",
-      "saveDir": "",
-      "imgSrc": []
-    };
-    tmp.url = line;
-    links.push(tmp);
+    links.push(line);
   }
-  // Remove duplicate links
-  links = _.uniq(links);
-  console.log(`Links Total: ${links.length}`);
-  let imgSrcArray = [];
-  for (let i = 0; i < links.length; i++) {
-    let link = links[i];
-    let $ = await getDom(link.url);
-    link.name = await $('header h1').text();
-    link.saveDir = path.resolve(config.downloadDir + path.sep + link.name);
-    await mkdir(link.saveDir);
-    await $("img").each((index, item) => {
-      link.imgSrc.push({
-        url: new URL(link.url).origin + item.attribs.src,
-        savePath: path.resolve(link.saveDir + path.sep + (index + 1) + path.extname(item.attribs.src))
-      });
-    });
-    // Remove duplicate
-    link.imgSrc = _.uniqBy(link.imgSrc, 'url');
-    // Add to imgSrcArray
-    imgSrcArray = imgSrcArray.concat(link.imgSrc);
-  }
-  await spendTime(async () => {
-    await async.mapLimit(imgSrcArray, config.limit || 10, function (json, callback) {
-      downloadImg(json, callback);
+  return uniq(links);
+}
+
+async function getImageArray(url) {
+  return await new Promise((resolve) => {
+    axios.get(url, {
+      responseType: "document",
     })
-  });
-  console.log(`Download complete!`);
-}
-
-/**
- * only compress dir under given `dirname`
- * @param dirName compress dirname
- * @param zipFileName compressed filename
- * @see https://github.com/cthackers/adm-zip
- * @description docs is out-of-date
- * @deprecated Unsupported chinese folder name
- */
-async function zipDir(dirName, zipFileName) {
-  return await new Promise(async (resolve, reject) => {
-    try {
-      const adm_zip = require("adm-zip"),
-        zip = new adm_zip(),
-        fs = require('fs'),
-        path = require('path');
-      
-      let files = fs.readdirSync(dirName);
-      for (const file of files) {
-        let filePath = dirName + path.sep + file;
-        if (fs.lstatSync(filePath).isDirectory()) {
-          await zip.addLocalFolder(filePath, path.relative(dirName, filePath));
-        }
-      }
-      await zip.writeZip(zipFileName);
-      return resolve();
-    } catch (e) {
-      return reject(e);
-    }
+      .then(res => {
+        return res.data;
+      })
+      .then(doc => {
+        return load(doc);
+      })
+      .then($ => {
+        const title = $('header h1').text();
+        const saveDir = path.resolve(config.downloadDir + path.sep + title);
+        mkdir(saveDir);
+        const imgSrc = [];
+        $("img").each((index, item) => {
+          imgSrc.push({
+            url: new URL(url).origin + item.attribs.src,
+            savePath: path.resolve(saveDir + path.sep + (index + 1) + path.extname(item.attribs.src))
+          });
+        });
+        return resolve(uniq(imgSrc));
+      })
+      .catch(e => {
+        logger.error(`Get ImageArray failed, url: ${url}`);
+        logger.error(e);
+        return resolve([]);
+      });
   })
 }
 
-/**
- * compress dir via `zip` command
- * @param dirName compress dirname
- * @param zipFileName compressed filename
- * @see linux command -> `zip`
- */
-async function zipViaPipe(dirName, zipFileName) {
+async function downloadFile(url, filePath, callback) {
   return await new Promise((resolve, reject) => {
-    const {spawn} = require('child_process'),
-      which = require('which');
-    let args = ["-q -r", zipFileName, dirName];
-    const spawnObj = spawn(
-      config.zipBin || which.sync('zip'),
-      args,
-      {
-        "shell": true,
-        "windowsHide": true
-      }
-    );
-    spawnObj.stderr.on('data', function (e) {
-      return reject(e);
-    });
-    spawnObj.on('exit', (code) => {
-      if (code === 0) {
-        return resolve();
-      } else {
-        return reject('UnKnowError!!!');
-      }
-    });
-  });
+    const writeStream = fs.createWriteStream(filePath);
+    logger.info(`Downloading ${url}...`)
+    axios.get(url, {
+      responseType: "stream",
+    })
+      .then(res => {
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+        res.data.pipe(writeStream);
+      })
+      .then(() => {
+        logger.info(`Downloaded ${url} to ${filePath}`);
+      })
+      .catch(e => {
+        logger.error(`Download error: ${e.message}`);
+        logger.error(e);
+        return reject({
+          url: url,
+          filePath: filePath
+        });
+      })
+      .finally(callback);
+  })
 }
 
-spendTime(main).then(async () => {
+
+(async () => {
+  init();
+  const urls = await getUrl(config.links);
+  const downloadFailed = [];
+  // update axios settings
+  axios.defaults.timeout = Math.max(urls.length, 3) * 1000;
+  logger.info(`Total urls: ${urls.length}`);
+  let imagesUrl = [];
+  for (const url of urls) {
+    logger.info(`Getting image urls from ${url}`);
+    imagesUrl = imagesUrl.concat(await getImageArray(url));
+  }
   await spendTime(async () => {
-    console.log(`Compressing...`);
-    // await zipDir(config.downloadDir, config.zipFileName || path.resolve(config.downloadDir) + '.zip');
-    await zipViaPipe(config.downloadDir, config.zipFileName || path.resolve(config.downloadDir) + '.zip');
-    console.log(`Compressed to ${path.resolve(config.downloadDir)}.zip`)
+    await async.mapLimit(imagesUrl, config.limit || 10, async function (json, callback) {
+      await downloadFile(json.url, json.savePath, callback)
+        .catch(e => {
+          downloadFailed.push(e);
+        });
+    })
+      .catch(e => {
+        logger.error(e);
+      })
   })
-});
+    .then(() => {
+      logger.info(`Download complete!`);
+    })
+    .catch(e => {
+      logger.error(`Download Error: ${e.message}`);
+      logger.error(e);
+    })
+    .finally(() => {
+      //Show failed url
+      if (downloadFailed.length !== 0) {
+        logger.error(downloadFailed);
+      }
+    })
+})()
+
+

@@ -1,8 +1,0 @@
-{
-  "downloadDir": "./tmp",
-  "limit": 10,
-  "proxy": null,
-  "links": "./task.txt",
-  "zipFileName": null,
-  "zipBin": null
-}
