@@ -1,5 +1,5 @@
 /**
- * @author IITII
+ * @author IITII <ccmejx@gmail.com>
  * @date 2020/11/3 22:34
  */
 'use strict';
@@ -8,7 +8,7 @@ const axios = require('axios'),
   config = require('./config.js'),
   fs = require('fs'),
   readline = require('readline'),
-  async = require('async'),
+  {mapLimit} = require('async'),
   {uniq} = require('lodash'),
   {logger} = require('./logger'),
   path = require('path');
@@ -91,15 +91,12 @@ async function getUrl(filePath) {
 
 async function getImageArray(url) {
   return await new Promise((resolve) => {
+    logger.info(`Getting image urls from ${url}`)
     axios.get(url, {
       responseType: "document",
     })
-      .then(res => {
-        return res.data;
-      })
-      .then(doc => {
-        return load(doc);
-      })
+      .then(res => res.data)
+      .then(doc => load(doc))
       .then($ => {
         const title = $('header h1').text();
         const saveDir = path.resolve(config.downloadDir + path.sep + title);
@@ -133,9 +130,7 @@ async function downloadFile(url, filePath, callback) {
         writeStream.on('error', reject);
         res.data.pipe(writeStream);
       })
-      .then(() => {
-        logger.info(`Downloaded ${url} to ${filePath}`);
-      })
+      .then(() => logger.info(`Downloaded ${url} to ${filePath}`))
       .catch(e => {
         logger.error(`Download error: ${e.message}`);
         logger.error(e);
@@ -157,24 +152,19 @@ async function downloadFile(url, filePath, callback) {
   axios.defaults.timeout = Math.max(urls.length, 3) * 1000;
   logger.info(`Total urls: ${urls.length}`);
   let imagesUrl = [];
-  for (const url of urls) {
-    logger.info(`Getting image urls from ${url}`);
-    imagesUrl = imagesUrl.concat(await getImageArray(url));
-  }
+  await Promise.all(urls.map(url => getImageArray(url)))
+    .then(matrix => imagesUrl = matrix.flat(Infinity))
+    .catch(e => logger.error(e))
   await spendTime(async () => {
-    await async.mapLimit(imagesUrl, config.limit || 10, async function (json, callback) {
+    await mapLimit(imagesUrl, config.limit || 10, async function (json, callback) {
       await downloadFile(json.url, json.savePath, callback)
         .catch(e => {
           downloadFailed.push(e);
         });
     })
-      .catch(e => {
-        logger.error(e);
-      })
+      .catch(e => logger.error(e))
   })
-    .then(() => {
-      logger.info(`Download complete!`);
-    })
+    .then(() => logger.info(`Download complete!`))
     .catch(e => {
       logger.error(`Download Error: ${e.message}`);
       logger.error(e);

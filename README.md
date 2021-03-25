@@ -1,5 +1,4 @@
 # Telegraph_downloader
-> node-fetch  
 > cheerio  
 > nodejs   
 * A simple downloader for Telegraph
@@ -14,7 +13,12 @@
 1. ~~Image maybe broken under high concurrency~~ (fixed)
 > Some ways: async.queue async.mapLimit  
 
-2. Maybe not support Chinese   
+2. ~~Maybe not support Chinese~~ (fixed)
+> 1. Linux server don't install special language package 
+> 2. it's some problem of your software  
+> 3. Just package the downloaded files via `tar` or others.
+> Download this archive to your computer.
+> Then unarchived it, everything goes well.  
 
 # config.json
 
@@ -24,7 +28,4 @@
 | limit | Concurrency Limit| `10`| 
 | proxy | Http proxy| `Following System proxy`| 
 | links | A file which store download Links| `task.txt`| 
-| zipFileName | Zipped filename|`${path.resolve(downloadDir)}.zip`|
-| zipBin| `zip` command executable binary file|Read from `PATH`|
-
 <!--| linksOnly | while true, print all image's links and exit without download anything| `false`|--> 

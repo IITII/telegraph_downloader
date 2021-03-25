@@ -10,7 +10,7 @@ const opts = {
   // errorEventName: 'error',
   dateFormat: 'YYYY.MM.DD',
   timestampFormat: format,
-  level: process.env.LOG_LEVEL || 'debug',
+  level: process.env.LOG_LEVEL || 'info',
   category: ''
 }
 /**

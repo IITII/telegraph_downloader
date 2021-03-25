@@ -5,12 +5,14 @@
 'use strict';
 let config = {
   "downloadDir": "./tmp",
-  "limit": 10,
+  "limit": 25,
   "proxy": false,
-  "links": "./task.txt",
-  "zipFileName": null,
-  "zipBin": null
+  "links": "./task.txt"
 };
 // config.proxy = false;
+
+// Telegraph will return 500 if the rate is too high
+// Maybe 25 is best
+config.limit = process.env.TGD_LIMIT || 5 * 5
 
 module.exports = config;
